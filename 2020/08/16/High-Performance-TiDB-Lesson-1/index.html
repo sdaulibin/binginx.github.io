@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  
+  <title>High-Performance-TiDB-Lesson-1 [ 木子木木三 ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="/css/iLiKE.css">
+    
+  
+  
+  
+<meta name="generator" content="Hexo 5.0.2"></head>
+<body>
+    <div class="header">
+        <div class="container">
+    <div class="menu">
+      <div class="menu-left">
+        <a href="/">
+          <img src="/favicon.ico"></img>
+        </a>
+      </div>
+      <div class="menu-right">
+        
+          
+          
+          
+          
+          
+          <a href="/">首页</a>
+        
+          
+          
+          
+          
+          
+          <a href="/archives">归档</a>
+        
+          
+          
+          
+          
+          
+          <a href="/about">关于</a>
+        
+      </div>
+    </div>
+</div>
+    </div>
+    <div class="container">
+        <h1 class="post-title">High-Performance-TiDB-Lesson-1</h1>
+<article class="post markdown-style">
+  <h4 id="源码编译并部署tidb、tikv"><a href="#源码编译并部署tidb、tikv" class="headerlink" title="源码编译并部署tidb、tikv"></a>源码编译并部署tidb、tikv</h4><p>编译部署环境：centos7、git1.8、make3.82、cmake3.14.5</p>
+<h5 id="安装配置golang"><a href="#安装配置golang" class="headerlink" title="安装配置golang"></a>安装配置golang</h5><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">cd ~</span><br><span class="line">wget https://golang.org/dl/go1.15.linux-amd64.tar.gz</span><br><span class="line">tar -C /usr/local -xzf go1.15.linux-amd64.tar.gz</span><br><span class="line">vim /etc/profile</span><br><span class="line"><span class="meta">#</span><span class="bash"> 在最后增加一行</span></span><br><span class="line">export PATH=$PATH:/usr/local/go/bin</span><br><span class="line">source /etc/profile</span><br><span class="line">go env</span><br><span class="line"><span class="meta">#</span><span class="bash"> 配置goproxy</span></span><br><span class="line">go env -w GO111MODULE=on</span><br><span class="line">go env -w GOPROXY=https://goproxy.io,direct</span><br></pre></td></tr></table></figure>
+
+<h5 id="安装配置rust"><a href="#安装配置rust" class="headerlink" title="安装配置rust"></a>安装配置rust</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">cd ~</span><br><span class="line">curl --proto &#39;&#x3D;https&#39; --tlsv1.2 -sSf https:&#x2F;&#x2F;sh.rustup.rs | sh</span><br><span class="line">vim &#x2F;etc&#x2F;profile</span><br><span class="line"># 在最后增加一行</span><br><span class="line">export PATH&#x3D;$HOME&#x2F;.cargo&#x2F;bin:$PATH</span><br><span class="line">source &#x2F;etc&#x2F;profile</span><br><span class="line">rustc --version</span><br><span class="line">rustup --version</span><br><span class="line">cargo --version</span><br><span class="line"># centos7 cmake版本较低，重装cmake</span><br><span class="line">yum remove cmake</span><br><span class="line">wget https:&#x2F;&#x2F;github.com&#x2F;Kitware&#x2F;CMake&#x2F;releases&#x2F;download&#x2F;v3.14.5&#x2F;cmake-3.14.5-Linux-x86_64.tar.gz</span><br><span class="line">tar -zxvf cmake-3.14.5-Linux-x86_64.tar.gz</span><br><span class="line">mv cmake-3.14.5-Linux-x86_64 &#x2F;usr&#x2F;local&#x2F;cmake</span><br><span class="line">vim &#x2F;etc&#x2F;profile</span><br><span class="line"># 在最后增加一行</span><br><span class="line">export PATH&#x3D;$PATH:&#x2F;usr&#x2F;local&#x2F;cmake&#x2F;bin</span><br><span class="line">source &#x2F;etc&#x2F;profile</span><br><span class="line">cmake -version</span><br><span class="line">yum install gcc gcc-c++</span><br></pre></td></tr></table></figure>
+
+
+
+<h5 id="下载源代码"><a href="#下载源代码" class="headerlink" title="下载源代码"></a>下载源代码</h5><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">mkdir -p ~/go/src</span><br><span class="line">go clone git clone https://github.com/pingcap/pd.git</span><br><span class="line">go clone git clone //github.com/pingcap/tidb.git</span><br><span class="line">go clone https://github.com/tikv/tikv.git</span><br></pre></td></tr></table></figure>
+
+<h5 id="编译pd并启动验证"><a href="#编译pd并启动验证" class="headerlink" title="编译pd并启动验证"></a>编译pd并启动验证</h5><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">cd ~/go/src/pd</span><br><span class="line">make build</span><br><span class="line">cd bin/</span><br><span class="line">nohup ./pd-server --data-dir=pd --log-file=pd.log &amp;</span><br><span class="line"><span class="meta">#</span><span class="bash"> 查看2379端口</span></span><br><span class="line">netstat -anp | grep 2379</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span><span class="bash"> [root@binginx-centos bin]<span class="comment"># netstat -anp | grep 2379</span></span></span><br><span class="line"><span class="meta">#</span><span class="bash"> tcp        0      0 127.0.0.1:2379          0.0.0.0:*               LISTEN      4777/./pd-server</span></span><br></pre></td></tr></table></figure>
+
+<h5 id="编译tikv并启动验证"><a href="#编译tikv并启动验证" class="headerlink" title="编译tikv并启动验证"></a>编译tikv并启动验证</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">cd ~&#x2F;go&#x2F;src&#x2F;tikv</span><br><span class="line">cargo build</span><br><span class="line">cd target&#x2F;debug&#x2F;</span><br><span class="line">nohup .&#x2F;tikv-server --pd-endpoints&#x3D;&quot;127.0.0.1:2379&quot; --addr&#x3D;&quot;127.0.0.1:20160&quot; --data-dir&#x3D;tikv1 --log-file&#x3D;tikv1.log &amp;</span><br><span class="line"></span><br><span class="line"># 查看20160端口</span><br><span class="line">netstat -anp | grep 20160</span><br><span class="line"></span><br><span class="line"># [root@binginx-centos debug]# netstat -anp | grep 20160</span><br><span class="line"># tcp        0      0 127.0.0.1:20160         0.0.0.0:*               LISTEN      5623&#x2F;.&#x2F;tikv-server</span><br></pre></td></tr></table></figure>
+
+<h5 id="编译tidb并启动验证"><a href="#编译tidb并启动验证" class="headerlink" title="编译tidb并启动验证"></a>编译tidb并启动验证</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">cd ~&#x2F;go&#x2F;src&#x2F;tidb</span><br><span class="line">make</span><br><span class="line">cd bin</span><br><span class="line">nohup .&#x2F;tidb-server --store&#x3D;tikv --path&#x3D;&quot;127.0.0.1:2379&quot;  --log-file&#x3D;tidb.log &amp;</span><br><span class="line"></span><br><span class="line"># 查看4000端口</span><br><span class="line">netstat -anp | grep 4000</span><br><span class="line"></span><br><span class="line"># [root@binginx-centos bin]# netstat -anp | grep 4000</span><br><span class="line"># tcp6       0      0 :::4000                 :::*                    LISTEN      6006&#x2F;.&#x2F;tidb-server</span><br></pre></td></tr></table></figure>
+
+<h5 id="启动1pd1tidb3tikv"><a href="#启动1pd1tidb3tikv" class="headerlink" title="启动1pd1tidb3tikv"></a>启动1pd1tidb3tikv</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"># 方便启停，新建start.sh与stop.sh</span><br><span class="line">cd ~&#x2F;go&#x2F;src</span><br><span class="line">vim start.sh</span><br><span class="line"># cd ~&#x2F;go&#x2F;src&#x2F;pd&#x2F;bin</span><br><span class="line"># nohup .&#x2F;pd-server --data-dir&#x3D;pd --log-file&#x3D;pd.log &amp;</span><br><span class="line"># cd ~&#x2F;go&#x2F;src&#x2F;tikv&#x2F;target&#x2F;debug&#x2F;</span><br><span class="line"># nohup .&#x2F;tikv-server --pd-endpoints&#x3D;&quot;127.0.0.1:2379&quot; --addr&#x3D;&quot;127.0.0.1:20160&quot; --data-dir&#x3D;tikv1 --log-file&#x3D;tikv1.log &amp;</span><br><span class="line"># nohup .&#x2F;tikv-server --pd-endpoints&#x3D;&quot;127.0.0.1:2379&quot; --addr&#x3D;&quot;127.0.0.1:20161&quot; --data-dir&#x3D;tikv2 --log-file&#x3D;tikv2.log &amp;</span><br><span class="line"># nohup .&#x2F;tikv-server --pd-endpoints&#x3D;&quot;127.0.0.1:2379&quot; --addr&#x3D;&quot;127.0.0.1:20162&quot; --data-dir&#x3D;tikv3 --log-file&#x3D;tikv3.log &amp;</span><br><span class="line"># cd ~&#x2F;go&#x2F;src&#x2F;tidb&#x2F;bin</span><br><span class="line"># nohup .&#x2F;tidb-server --store&#x3D;tikv --path&#x3D;&quot;127.0.0.1:2379&quot;  --log-file&#x3D;tidb.log &amp;</span><br><span class="line">vim stop.sh</span><br><span class="line"># ps -ef | grep tidb-server |awk &#39;&#123;split($2,a);print a[1]&#125;&#39; | xargs kill -9</span><br><span class="line"># ps -ef | grep tikv-server |grep 20160 |awk &#39;&#123;split($2,a);print a[1]&#125;&#39; | xargs kill -9</span><br><span class="line"># ps -ef | grep tikv-server |grep 20161 |awk &#39;&#123;split($2,a);print a[1]&#125;&#39; | xargs kill -9</span><br><span class="line"># ps -ef | grep tikv-server |grep 20162 |awk &#39;&#123;split($2,a);print a[1]&#125;&#39; | xargs kill -9</span><br><span class="line"># ps -ef | grep pd-server |awk &#39;&#123;split($2,a);print a[1]&#125;&#39; | xargs kill -9</span><br><span class="line">chmod +x start.sh stop.sh</span><br><span class="line">.&#x2F;start.sh</span><br><span class="line">ps -ef | grep server</span><br><span class="line"># root      6732     1  2 18:45 pts&#x2F;0    00:00:00 .&#x2F;pd-server --data-dir&#x3D;pd --log-file&#x3D;pd.log</span><br><span class="line"># root      6733     1  3 18:45 pts&#x2F;0    00:00:00 .&#x2F;tikv-server --pd-endpoints&#x3D;127.0.0.1:2379 --addr&#x3D;127.0.0.1:20160 --data-dir&#x3D;tikv1 --log-file&#x3D;tikv1.log</span><br><span class="line"># root      6734     1  3 18:45 pts&#x2F;0    00:00:00 .&#x2F;tikv-server --pd-endpoints&#x3D;127.0.0.1:2379 --addr&#x3D;127.0.0.1:20161 --data-dir&#x3D;tikv2 --log-file&#x3D;tikv2.log</span><br><span class="line"># root      6735     1  3 18:45 pts&#x2F;0    00:00:00 .&#x2F;tikv-server --pd-endpoints&#x3D;127.0.0.1:2379 --addr&#x3D;127.0.0.1:20162 --data-dir&#x3D;tikv3 --log-file&#x3D;tikv3.log</span><br><span class="line"># root      6736     1  0 18:45 pts&#x2F;0    00:00:00 .&#x2F;tidb-server --store&#x3D;tikv --path&#x3D;127.0.0.1:2379 --log-file&#x3D;tidb.log</span><br></pre></td></tr></table></figure>
+
+<p><img src="https://i.loli.net/2020/08/16/e5UGcRAfWCXO4zj.png" alt="image-20200816184955657.png"></p>
+<p><img src="https://i.loli.net/2020/08/16/AaRCVPGtqkMOIpD.png" alt="image-20200816185157648.png"></p>
+<p><img src="https://i.loli.net/2020/08/16/UtFyILHX4p17iR3.png" alt="image-20200816185405911.png"></p>
+<h4 id="改写源代码，事务启动时，打印日志"><a href="#改写源代码，事务启动时，打印日志" class="headerlink" title="改写源代码，事务启动时，打印日志"></a>改写源代码，事务启动时，打印日志</h4><ol>
+<li><p>寻找事务启动的过程中分别尝试了store/kv.go、store/tikv/txn.go中的Commit实现，都没成功，而且加上之后后台线程一直在不停地打印”hello transaction”</p>
+</li>
+<li><p>通过test尝试找到了session.go的ExecutePreparedStmt实现，加上日志，写入数据，查看tidb的日志，感觉事务启动是在2pc.go中</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F; ExecutePreparedStmt executes a prepared statement.</span><br><span class="line">func (s *session) ExecutePreparedStmt(ctx context.Context, stmtID uint32, args []types.Datum) (sqlexec.RecordSet, error) &#123;</span><br><span class="line">    logutil.BgLogger().Info(&quot;ExecutePreparedStmt hello transactions&quot;)</span><br><span class="line">    s.PrepareTxnCtx(ctx)</span><br><span class="line">    var err error</span><br><span class="line">    s.sessionVars.StartTime &#x3D; time.Now()</span><br><span class="line">    preparedPointer, ok :&#x3D; s.sessionVars.PreparedStmts[stmtID]</span><br><span class="line">    if !ok &#123;</span><br><span class="line">        err &#x3D; plannercore.ErrStmtNotFound</span><br><span class="line">        logutil.Logger(ctx).Error(&quot;prepared statement not found&quot;, zap.Uint32(&quot;stmtID&quot;, stmtID))</span><br><span class="line">        return nil, err</span><br><span class="line">    &#125;</span><br><span class="line">    preparedStmt, ok :&#x3D; preparedPointer.(*plannercore.CachedPrepareStmt)</span><br><span class="line">    if !ok &#123;</span><br><span class="line">        return nil, errors.Errorf(&quot;invalid CachedPrepareStmt type&quot;)</span><br><span class="line">    &#125;</span><br><span class="line">    executor.CountStmtNode(preparedStmt.PreparedAst.Stmt, s.sessionVars.InRestrictedSQL)</span><br><span class="line">    ok, err &#x3D; s.IsCachedExecOk(ctx, preparedStmt)</span><br><span class="line">    if err !&#x3D; nil &#123;</span><br><span class="line">        return nil, err</span><br><span class="line">    &#125;</span><br><span class="line">    if ok &#123;</span><br><span class="line">        return s.cachedPlanExec(ctx, stmtID, preparedStmt, args)</span><br><span class="line">    &#125;</span><br><span class="line">    return s.preparedStmtExec(ctx, stmtID, preparedStmt, args)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="https://i.loli.net/2020/08/16/F5A6rZpg3mDcXt1.png" alt="image-20200816191007452.png"></p>
+</li>
+<li><p>修改2pc.go的execute实现，加上日志，写入数据，查看tidb的日志</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F; execute executes the two-phase commit protocol.</span><br><span class="line">func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) &#123;</span><br><span class="line">    。。。</span><br><span class="line">    binlogChan :&#x3D; c.prewriteBinlog(ctx)</span><br><span class="line">    prewriteBo :&#x3D; NewBackofferWithVars(ctx, PrewriteMaxBackoff, c.txn.vars)</span><br><span class="line">    start :&#x3D; time.Now()</span><br><span class="line">    err &#x3D; c.prewriteMutations(prewriteBo, c.mutations)</span><br><span class="line">    commitDetail :&#x3D; c.getDetail()</span><br><span class="line">    logutil.BgLogger().Info(&quot;2pc hello transactions&quot;)</span><br><span class="line">    commitDetail.PrewriteTime &#x3D; time.Since(start)</span><br><span class="line">    。。。</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+</li>
+</ol>
+<p><img src="https://i.loli.net/2020/08/16/rd79Ka1x2eLio58.png" alt="image-20200816192740470.png"></p>
+<p><img src="https://i.loli.net/2020/08/16/GkdB1txTscX4gyY.png" alt="image-20200816192824195.png"></p>
+<blockquote>
+<p>以上为，从源码编译部署tidb、tikv、pd，并通过修改源代码在事务开启时打印日志的过程，不确定事务开启是否在2pc.go，go以及tidb初学者，还请指正！</p>
+</blockquote>
+
+</article>
+
+    <div class="pagenator post-pagenator">
+    
+    
+        <a class="extend prev post-prev" href="/2020/08/23/High-Performance-TiDB-Lesson-2/">prev</a>
+    
+
+    
+    <p>last update time 2020-08-16</p>
+    
+    
+    </div>
+
+    </div>
+    <div class="footer">
+        <div class="container">
+    <div class="social">
+	<ul class="social-list">
+		
+			
+				
+				
+				<li>
+					<a href="mailto:binginx@126.com" title="email" target="_blank">
+					<i class="fa fa-email"></i>
+					</a>
+				</li>
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+				
+				<li>
+					<a href="https://github.com/sdaulibin" title="github" target="_self">
+					<i class="fa fa-github"></i>
+					</a>
+				</li>
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+	</ul>
+</div>
+    <div class="copyright">
+        <span>
+            
+            
+            
+                © binginx 2015 - 2022
+            
+        </span>
+    </div>
+    <div class="power">
+        <span>
+            Powered by <a target="_blank" rel="noopener" href="https://hexo.io">Hexo</a> & <a target="_blank" rel="noopener" href="https://github.com/CaiChenghan/iLiKE">iLiKE Theme</a>
+        </span>
+	<span>
+	    <a target="_blank" rel="noopener" href="http://beian.miit.gov.cn">鲁ICP备2021008248号</a>
+	</span>
+    </div>
+    <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.js"></script>
+    <!--page counter part-->
+<script>
+function addCount (Counter) {
+    url=$('.article-date').attr('href').trim();
+    title = $('.article-title').text().trim();
+    var query = new AV.Query(Counter);
+    //use url as unique idnetfication
+    query.equalTo("url",url);
+    query.find({
+        success: function(results) {
+            if (results.length>0) {
+                var counter=results[0];
+                counter.fetchWhenSave(true); //get recent result
+                counter.increment("time");
+                counter.save();
+            } else {
+                var newcounter=new Counter();
+                newcounter.set("title",title);
+                newcounter.set("url",url);
+                newcounter.set("time",1);
+                newcounter.save(null,{
+                    success: function(newcounter) {
+                        //alert('New object created');
+                    }, error: function(newcounter,error) {
+                        alert('Failed to create');
+                    }
+                })
+            }
+        },
+        error: function(error) {
+            //find null is not a error
+            alert('Error:'+error.code+" "+error.message);
+        }
+    });
+}
+$(function() {
+    var Counter=AV.Object.extend("Counter");
+    //only increse visit counting when intering a page
+    if ($('.article-title').length == 1) {
+       addCount(Counter);
+    }
+    var query=new AV.Query(Counter);
+    query.descending("time");
+    // the sum of popular posts
+    query.limit(10); 
+    query.find({
+        success: function(results) {
+                for(var i=0;i<results.length;i++) {
+                    var counter=results[i];
+                    title=counter.get("title");
+                    url=counter.get("url");
+                    time=counter.get("time");
+                    // add to the popularlist widget
+                    showcontent=title+" ("+time+")";
+                    //notice the "" in href
+                    $('.popularlist').append('<li><a href="'+url+'">'+showcontent+'</a></li>');
+                }
+            },
+        error: function(error) {
+            alert("Error:"+error.code+" "+error.message);
+        }
+    });
+});
+</script>
+</div>
+
+    </div>
+</body>
+</html>

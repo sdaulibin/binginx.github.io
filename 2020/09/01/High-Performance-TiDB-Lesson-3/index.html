@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  
+  <title>High-Performance-TiDB-Lesson-3 [ 木子木木三 ]</title>
+  
+    <!-- stylesheets list from config.yml -->
+    
+      <link rel="stylesheet" href="/css/iLiKE.css">
+    
+  
+  
+  
+<meta name="generator" content="Hexo 5.0.2"></head>
+<body>
+    <div class="header">
+        <div class="container">
+    <div class="menu">
+      <div class="menu-left">
+        <a href="/">
+          <img src="/favicon.ico"></img>
+        </a>
+      </div>
+      <div class="menu-right">
+        
+          
+          
+          
+          
+          
+          <a href="/">首页</a>
+        
+          
+          
+          
+          
+          
+          <a href="/archives">归档</a>
+        
+          
+          
+          
+          
+          
+          <a href="/about">关于</a>
+        
+      </div>
+    </div>
+</div>
+    </div>
+    <div class="container">
+        <h1 class="post-title">High-Performance-TiDB-Lesson-3</h1>
+<article class="post markdown-style">
+  <h4 id="环境准备"><a href="#环境准备" class="headerlink" title="环境准备"></a>环境准备</h4><blockquote>
+<p>由于机器资源限制，在个人笔记本进行测试，笔记本配置为MacBook Pro(2015,4c16g)下，cpu：2.2 GHz 四核Intel Core i7，内存：16 GB 1600 MHz DDR3</p>
+</blockquote>
+<ul>
+<li><p>使用parallels新建了四个虚拟机，1台中控机器，3台目标机器，安装的操作系统版本都为centos7</p>
+</li>
+<li><p>中控机器分配的资源为1c2g，最大64g的硬盘空间，ip为192.168.199.226</p>
+</li>
+<li><p>目标机器每台分配的资源为2c4g，最大64g的硬盘空间，ip地址分别为192.168.199.227、192.168.199.228、192.168.199.229</p>
+</li>
+<li><p>使用haproxy对三台tidb做负载均衡，端口3306</p>
+<table>
+<thead>
+<tr>
+<th align="left">192.168.199.227</th>
+<th align="left">pd，tikv，tidb</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">192.168.199.228</td>
+<td align="left">pd，tikv，tidb</td>
+</tr>
+<tr>
+<td align="left">192.168.199.229</td>
+<td align="left">pd，tikv，tidb</td>
+</tr>
+<tr>
+<td align="left">192.168.199.226</td>
+<td align="left">haproxy</td>
+</tr>
+</tbody></table>
+</li>
+</ul>
+<h4 id="使用go-tpc测试"><a href="#使用go-tpc测试" class="headerlink" title="使用go-tpc测试"></a>使用go-tpc测试</h4><h5 id="安装go-tpc"><a href="#安装go-tpc" class="headerlink" title="安装go-tpc"></a>安装go-tpc</h5><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">git clone https://github.com/pingcap/go-tpc.git</span><br><span class="line">cd go-tpc</span><br><span class="line">make build</span><br></pre></td></tr></table></figure>
+
+<h5 id="准备数据"><a href="#准备数据" class="headerlink" title="准备数据"></a>准备数据</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">mysql -u root -h 192.168.199.226 -P 3306 -u root</span><br><span class="line">create database tpcc</span><br><span class="line">cd go-tpcc&#x2F;bin</span><br><span class="line">.&#x2F;go-tpc tpcc -H 192.168.199.226 -P 3306 -D tpcc --warehouses 8 prepare -T 8</span><br></pre></td></tr></table></figure>
+
+<p><img src="https://i.loli.net/2020/09/01/jpMhg3KTfyksBcd.png" alt="image-20200831230137988.png"></p>
+<h4 id="Profile-TiDB"><a href="#Profile-TiDB" class="headerlink" title="Profile TiDB"></a>Profile TiDB</h4><h5 id="测试数据"><a href="#测试数据" class="headerlink" title="测试数据"></a>测试数据</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">## threads&#x3D;16</span><br><span class="line">.&#x2F;go-tpc tpcc -H 192.168.199.226 -P 3306 -D tpcc --warehouses 8 run --time&#x3D;1m --threads&#x3D;16</span><br></pre></td></tr></table></figure>
+
+<h5 id="生成Profile文件"><a href="#生成Profile文件" class="headerlink" title="生成Profile文件"></a>生成Profile文件</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">mkdir profiles</span><br><span class="line">curl http:&#x2F;&#x2F;192.168.199.227:10080&#x2F;debug&#x2F;zip?seconds&#x3D;80 --output tidb-227-debug.zip</span><br><span class="line">&#x2F;go-tpc&#x2F;bin&#x2F;go-tpc tpcc -H 192.168.199.226 -P 3306 -D tpcc --warehouses 8 run --time&#x3D;1m --threads&#x3D;16</span><br><span class="line">curl http:&#x2F;&#x2F;192.168.199.228:10080&#x2F;debug&#x2F;zip?seconds&#x3D;80 --output tidb-228-debug.zip</span><br><span class="line">&#x2F;go-tpc&#x2F;bin&#x2F;go-tpc tpcc -H 192.168.199.226 -P 3306 -D tpcc --warehouses 8 run --time&#x3D;1m --threads&#x3D;16</span><br><span class="line">curl http:&#x2F;&#x2F;192.168.199.229:10080&#x2F;debug&#x2F;zip?seconds&#x3D;80 --output tidb-229-debug.zip</span><br><span class="line">&#x2F;go-tpc&#x2F;bin&#x2F;go-tpc tpcc -H 192.168.199.226 -P 3306 -D tpcc --warehouses 8 run --time&#x3D;1m --threads&#x3D;16</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>192.168.199.227 tpmc 3298</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/baRGgxwhemyNT6p.png" alt="image-20200831231720908.png"></p>
+<ul>
+<li>192.168.199.228 tpmc 2964</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/JX9W1wFKNzxPuVl.png" alt="image-20200831231758463.png"></p>
+<ul>
+<li>192.168.199.229 tpmc 3379</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/w19qfaVnIsJSlNm.png" alt="image-20200831232117594.png"></p>
+<ul>
+<li>profile文件</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/vgh25PwkqXl7NRt.png" alt="image-20200831232246294.png"></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">## 下载zip文件到主机，安装graphviz，解压zip，打开profile文件</span><br><span class="line">scp tidb@192.168.199.226:&#x2F;home&#x2F;tidb&#x2F;profile&#x2F;tidb-227-debug.zip .</span><br><span class="line">scp tidb@192.168.199.226:&#x2F;home&#x2F;tidb&#x2F;profile&#x2F;tidb-228-debug.zip .</span><br><span class="line">scp tidb@192.168.199.226:&#x2F;home&#x2F;tidb&#x2F;profile&#x2F;tidb-229-debug.zip .</span><br><span class="line">brew install graphviz</span><br><span class="line">go tool pprof -http&#x3D;:8080 profile</span><br><span class="line">go tool pprof -http&#x3D;:8080 heap</span><br><span class="line">go tool pprof -http&#x3D;:8080 mutex</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>192.168.199.227 Profile Graph</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/JU6MNekaQFn9Hsv.png" alt="image-20200901112929026.png"></p>
+<p>192.168.199.227 Profile Flame Graph</p>
+<p><img src="https://i.loli.net/2020/09/01/en814udypxw5Xsg.png" alt="image-20200901143624421.png"></p>
+<ul>
+<li>192.168.199.227 heap</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/P1rhDoBV9QOm47i.png" alt="image-20200901113102712.png"></p>
+<ul>
+<li>192.168.199.228 Profile Graph </li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/uYMnscNQ6eT9bHi.png" alt="image-20200901113247030"></p>
+<ul>
+<li>192.168.199.228 Profile Flame Graph</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/YCtoKW4IPQrG2Ui.png" alt="image-20200901143900081.png"></p>
+<ul>
+<li><p>192.168.199.228 heap</p>
+<p><img src="https://i.loli.net/2020/09/01/ukPAbcgmFnZV1YS.png" alt="image-20200901113356567"></p>
+</li>
+<li><p>192.168.199.229 Profile Graph</p>
+<p><img src="https://i.loli.net/2020/09/01/eIrd43MZ8BED9qc.png" alt="image-20200901113558781"></p>
+</li>
+<li><p>192.168.199.229 Profile Flame Graph</p>
+<p><img src="https://i.loli.net/2020/09/01/o2jEKftOD5AyTRw.png" alt="image-20200901144027313.png"></p>
+</li>
+<li><p>192.168.199.229 heap</p>
+<p><img src="https://i.loli.net/2020/09/01/yUXk5PlJ8stvEY6.png" alt="image-20200901113625080"></p>
+</li>
+</ul>
+<h5 id="问题分析"><a href="#问题分析" class="headerlink" title="问题分析"></a>问题分析</h5><ul>
+<li>通过分析三台TiDB cpu的火焰图，发现server.(*Server).xxx的一系列方法耗时较长，这部分主要功能是解析执行sql</li>
+<li>通过分析三台TiDB heap的火焰图，发现tikv.(*copIteratorWorker).run.xxx的一系列方法占用heap较大</li>
+</ul>
+<h4 id="Profile-TiKV"><a href="#Profile-TiKV" class="headerlink" title="Profile TiKV"></a>Profile TiKV</h4><h5 id="测试数据-1"><a href="#测试数据-1" class="headerlink" title="测试数据"></a>测试数据</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">## threads&#x3D;16</span><br><span class="line">.&#x2F;go-tpc tpcc -H 192.168.199.226 -P 3306 -D tpcc --warehouses 8 run --time&#x3D;1m --threads&#x3D;16</span><br></pre></td></tr></table></figure>
+
+<h5 id="使用dashboard查看TiKV火焰图"><a href="#使用dashboard查看TiKV火焰图" class="headerlink" title="使用dashboard查看TiKV火焰图"></a>使用dashboard查看TiKV火焰图</h5><ul>
+<li>选中三个TiKV实例</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/6vsR4qmLSMxgAYr.png" alt="image-20200831233712358.png"></p>
+<ul>
+<li>分析完成</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/EVyjb2S9CcQLD7K.png" alt="image-20200831233945410.png"></p>
+<ul>
+<li>TiKV 192.168.199.227 Profile Flame Graph</li>
+</ul>
+<p><img src="https://i.loli.net/2020/09/01/fpKuq5B9FgAvYda.png" alt="image-20200901221848014.png"></p>
+<ul>
+<li><p>TiKV 192.168.199.228 Profile Flame Graph</p>
+<p><img src="https://i.loli.net/2020/09/01/MiOY8gByALWZKnU.png" alt="image-20200901222058713.png"></p>
+</li>
+<li><p>TiKV 192.168.199.229 Profile Flame Graph</p>
+<p><img src="https://i.loli.net/2020/09/01/EdB5hv6IZCFWaxs.png" alt="image-20200901222209645.png"></p>
+</li>
+</ul>
+<h5 id="问题分析-1"><a href="#问题分析-1" class="headerlink" title="问题分析"></a>问题分析</h5><ul>
+<li>通过分析三台TiKV cpu的火焰图，发现grpc-server、raftstore耗时较长</li>
+</ul>
+
+</article>
+
+    <div class="pagenator post-pagenator">
+    
+    
+        <a class="extend prev post-prev" href="/2020/12/03/%E5%AE%B9%E5%99%A8%E6%97%A5%E5%BF%97%E9%87%87%E9%9B%86%E5%88%A9%E5%99%A8%EF%BC%9AFilebeat%E6%B7%B1%E5%BA%A6%E5%89%96%E6%9E%90%E4%B8%8E%E5%AE%9E%E8%B7%B5/">prev</a>
+    
+
+    
+    <p>last update time 2020-09-01</p>
+    
+    
+        <a class="extend next post-next" href="/2020/08/23/High-Performance-TiDB-Lesson-2/">next</a>
+    
+    </div>
+
+    </div>
+    <div class="footer">
+        <div class="container">
+    <div class="social">
+	<ul class="social-list">
+		
+			
+				
+				
+				<li>
+					<a href="mailto:binginx@126.com" title="email" target="_blank">
+					<i class="fa fa-email"></i>
+					</a>
+				</li>
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+				
+				<li>
+					<a href="https://github.com/sdaulibin" title="github" target="_self">
+					<i class="fa fa-github"></i>
+					</a>
+				</li>
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+			
+		
+	</ul>
+</div>
+    <div class="copyright">
+        <span>
+            
+            
+            
+                © binginx 2015 - 2022
+            
+        </span>
+    </div>
+    <div class="power">
+        <span>
+            Powered by <a target="_blank" rel="noopener" href="https://hexo.io">Hexo</a> & <a target="_blank" rel="noopener" href="https://github.com/CaiChenghan/iLiKE">iLiKE Theme</a>
+        </span>
+	<span>
+	    <a target="_blank" rel="noopener" href="http://beian.miit.gov.cn">鲁ICP备2021008248号</a>
+	</span>
+    </div>
+    <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.js"></script>
+    <!--page counter part-->
+<script>
+function addCount (Counter) {
+    url=$('.article-date').attr('href').trim();
+    title = $('.article-title').text().trim();
+    var query = new AV.Query(Counter);
+    //use url as unique idnetfication
+    query.equalTo("url",url);
+    query.find({
+        success: function(results) {
+            if (results.length>0) {
+                var counter=results[0];
+                counter.fetchWhenSave(true); //get recent result
+                counter.increment("time");
+                counter.save();
+            } else {
+                var newcounter=new Counter();
+                newcounter.set("title",title);
+                newcounter.set("url",url);
+                newcounter.set("time",1);
+                newcounter.save(null,{
+                    success: function(newcounter) {
+                        //alert('New object created');
+                    }, error: function(newcounter,error) {
+                        alert('Failed to create');
+                    }
+                })
+            }
+        },
+        error: function(error) {
+            //find null is not a error
+            alert('Error:'+error.code+" "+error.message);
+        }
+    });
+}
+$(function() {
+    var Counter=AV.Object.extend("Counter");
+    //only increse visit counting when intering a page
+    if ($('.article-title').length == 1) {
+       addCount(Counter);
+    }
+    var query=new AV.Query(Counter);
+    query.descending("time");
+    // the sum of popular posts
+    query.limit(10); 
+    query.find({
+        success: function(results) {
+                for(var i=0;i<results.length;i++) {
+                    var counter=results[i];
+                    title=counter.get("title");
+                    url=counter.get("url");
+                    time=counter.get("time");
+                    // add to the popularlist widget
+                    showcontent=title+" ("+time+")";
+                    //notice the "" in href
+                    $('.popularlist').append('<li><a href="'+url+'">'+showcontent+'</a></li>');
+                }
+            },
+        error: function(error) {
+            alert("Error:"+error.code+" "+error.message);
+        }
+    });
+});
+</script>
+</div>
+
+    </div>
+</body>
+</html>
